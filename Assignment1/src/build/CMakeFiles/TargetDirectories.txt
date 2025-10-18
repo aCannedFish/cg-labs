@@ -1,0 +1,3 @@
+/home/yuguanting/Desktop/cg-labs/HW/Assignment1/src/build/CMakeFiles/Rasterizer.dir
+/home/yuguanting/Desktop/cg-labs/HW/Assignment1/src/build/CMakeFiles/edit_cache.dir
+/home/yuguanting/Desktop/cg-labs/HW/Assignment1/src/build/CMakeFiles/rebuild_cache.dir
