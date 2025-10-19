@@ -44,17 +44,32 @@ static bool insideTriangle(int x, int y, const Vector3f* _v)
 {   
     // TODO : Implement this function to check if the point (x, y) is inside the triangle represented by _v[0], _v[1], _v[2]
     // Suppose _v[0] is point A, _v[1] is point B, _v[2] is point C
-    Vector3f AB = _v[1] - _v[0];
-    Vector3f BC = _v[2] - _v[1];
-    Vector3f CA = _v[0] - _v[2];
-    Vector3f PA = _v[0] - Vector3f(x, y, 1);
-    Vector3f PB = _v[1] - Vector3f(x, y, 1);
-    Vector3f PC = _v[2] - Vector3f(x, y, 1);
-    if (AB.cross(PA).z() > 0 && BC.cross(PB).z() > 0 && CA.cross(PC).z() > 0) {
-        return true;
-    } else {
-        return false;
+    // 0 means negative, 1 means positive
+    int flag = -1;
+
+    for(int i = 0; i < 3; i++) {
+        // the current point
+        Eigen::Vector3f p0 = {x, y, 0};
+        // the 1st vertex
+        Eigen::Vector3f p1 = _v[i];
+        // the 2nd vertex
+        Eigen::Vector3f p2 = _v[(i+1)%3];
+        
+        // the 1st vector (p1-p0)
+        Eigen::Vector3f v1 = p1-p0;
+        // the 2nd vector (p1-p2)
+        Eigen::Vector3f v2 = p1-p2;
+
+        // get the cross product
+        float cp = v1.cross(v2).z();
+        if(cp == 0) continue;
+
+        int sign = cp < 0 ? 0: 1;
+        if(flag == -1) flag = sign;
+        if(flag != sign) return false;
     }
+
+    return true;
 
 }
 
@@ -118,24 +133,41 @@ void rst::rasterizer::draw(pos_buf_id pos_buffer, ind_buf_id ind_buffer, col_buf
 //Screen space rasterization
 void rst::rasterizer::rasterize_triangle(const Triangle& t) {
     auto v = t.toVector4();
-    
-    // TODO : Find out the bounding box of current triangle.
-    // iterate through the pixel and find if the current pixel is inside the triangle
-    float min_x = std::min(std::min(v[0].x(), v[1].x()), v[2].x());
-    float max_x = std::max(std::max(v[0].x(), v[1].x()), v[2].x());
-    float min_y = std::min(std::min(v[0].y(), v[1].y()), v[2].y());
-    float max_y = std::max(std::max(v[0].y(), v[1].y()), v[2].y());
-    for (int x = std::floor(min_x); x <= std::ceil(max_x); x++) { // floor向下取整，ceil向上取整
-        for (int y = std::floor(min_y); y <= std::ceil(max_y); y++) {
-            if (insideTriangle(x + 0.5, y + 0.5, t.v)) {
-                auto[alpha, beta, gamma] = computeBarycentric2D(x + 0.5, y + 0.5, t.v);
+
+    float min_x = width;
+    float max_x = 0;
+    float min_y = height;
+    float max_y = 0;
+
+    // find out the bounding box of current triangle
+    for(int i = 0; i < 3; i++) {
+        min_x = std::min(v[i].x(), min_x);
+        max_x = std::max(v[i].x(), max_x);
+        min_y = std::min(v[i].y(), min_y);
+        max_y = std::max(v[i].y(), max_y);
+    }
+
+    // iterate through the pixel
+    for(int y = min_y; y < max_y; y++) {
+        for(int x = min_x; x < max_x; x++) {
+
+            // find if the current pixel is inside the triangle
+            if(insideTriangle(x+0.5, y+0.5, t.v)) {
+                // if so, use the following code to get the interpolated z value.
+                auto[alpha, beta, gamma] = computeBarycentric2D(x+0.5, y+0.5, t.v);
                 float w_reciprocal = 1.0/(alpha / v[0].w() + beta / v[1].w() + gamma / v[2].w());
                 float z_interpolated = alpha * v[0].z() / v[0].w() + beta * v[1].z() / v[1].w() + gamma * v[2].z() / v[2].w();
                 z_interpolated *= w_reciprocal;
-                int buf_index = get_index(x, y);
-                if (z_interpolated < depth_buf[buf_index]) {
-                    depth_buf[buf_index] = z_interpolated;
-                    set_pixel(Eigen::Vector3f(static_cast<float>(x), static_cast<float>(y), 1.0f), t.getColor());
+
+                // set the current pixel (use the set_pixel function) 
+                // to the color of the triangle (use getColor function)
+                // if it should be painted.
+                int index = get_index(x, y);
+                if(z_interpolated < depth_buf[index]) {
+                    Eigen::Vector3f p;
+                    p << x, y, z_interpolated;
+                    set_pixel(p, t.getColor());
+                    depth_buf[index] = z_interpolated;
                 }
             }
         }
