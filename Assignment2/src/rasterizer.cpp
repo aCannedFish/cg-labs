@@ -121,12 +121,32 @@ void rst::rasterizer::rasterize_triangle(const Triangle& t) {
     
     // TODO : Find out the bounding box of current triangle.
     // iterate through the pixel and find if the current pixel is inside the triangle
+    float min_x = std::min(std::min(v[0].x(), v[1].x()), v[2].x());
+    float max_x = std::max(std::max(v[0].x(), v[1].x()), v[2].x());
+    float min_y = std::min(std::min(v[0].y(), v[1].y()), v[2].y());
+    float max_y = std::max(std::max(v[0].y(), v[1].y()), v[2].y());
+    for (int x = std::floor(min_x); x <= std::ceil(max_x); x++) { // floor向下取整，ceil向上取整
+        for (int y = std::floor(min_y); y <= std::ceil(max_y); y++) {
+            if (insideTriangle(x + 0.5, y + 0.5, t.v)) {
+                auto[alpha, beta, gamma] = computeBarycentric2D(x + 0.5, y + 0.5, t.v);
+                float w_reciprocal = 1.0/(alpha / v[0].w() + beta / v[1].w() + gamma / v[2].w());
+                float z_interpolated = alpha * v[0].z() / v[0].w() + beta * v[1].z() / v[1].w() + gamma * v[2].z() / v[2].w();
+                z_interpolated *= w_reciprocal;
+                int buf_index = get_index(x, y);
+                if (z_interpolated < depth_buf[buf_index]) {
+                    depth_buf[buf_index] = z_interpolated;
+                    set_pixel(Eigen::Vector3f(static_cast<float>(x), static_cast<float>(y), 1.0f), t.getColor());
+                }
+            }
+        }
+    }
+
 
     // If so, use the following code to get the interpolated z value.
-    //auto[alpha, beta, gamma] = computeBarycentric2D(x, y, t.v);
-    //float w_reciprocal = 1.0/(alpha / v[0].w() + beta / v[1].w() + gamma / v[2].w());
-    //float z_interpolated = alpha * v[0].z() / v[0].w() + beta * v[1].z() / v[1].w() + gamma * v[2].z() / v[2].w();
-    //z_interpolated *= w_reciprocal;
+    // auto[alpha, beta, gamma] = computeBarycentric2D(x, y, t.v);
+    // float w_reciprocal = 1.0/(alpha / v[0].w() + beta / v[1].w() + gamma / v[2].w());
+    // float z_interpolated = alpha * v[0].z() / v[0].w() + beta * v[1].z() / v[1].w() + gamma * v[2].z() / v[2].w();
+    // z_interpolated *= w_reciprocal;
 
     // TODO : set the current pixel (use the set_pixel function) to the color of the triangle (use getColor function) if it should be painted.
 }
