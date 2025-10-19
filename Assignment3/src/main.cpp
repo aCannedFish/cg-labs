@@ -50,6 +50,27 @@ Eigen::Matrix4f get_model_matrix(float angle)
 Eigen::Matrix4f get_projection_matrix(float eye_fov, float aspect_ratio, float zNear, float zFar)
 {
     // TODO: Use the same projection matrix from the previous assignments
+    Eigen::Matrix4f projection = Eigen::Matrix4f::Identity();
+    
+    Eigen::Matrix4f proj, ortho;
+
+    proj << zNear, 0, 0, 0,
+            0, zNear, 0, 0,
+            0, 0, zNear + zFar, -zNear * zFar,
+            0, 0, 1, 0;//透视投影矩阵
+
+    double w, h, z;
+    h = zNear * tan(eye_fov / 2) * 2;
+    w = h * aspect_ratio;
+    z = zFar - zNear;
+
+    ortho << 2 / w, 0, 0, 0,
+             0, 2 / h, 0, 0,
+             0, 0, 2 / z, -(zFar+zNear) / 2,
+             0, 0, 0, 1;//正交投影矩阵，因为在观测投影时x0y平面视角默认是中心，所以这里的正交投影就不用平移x和y了
+             				
+    projection = ortho * proj * projection;
+    return projection;
 
 }
 

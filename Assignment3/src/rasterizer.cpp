@@ -286,7 +286,6 @@ void rst::rasterizer::rasterize_triangle(const Triangle& t, const std::array<Eig
     float min_y = height;
     float max_y = 0;
 
-    // find out the bounding box of current triangle
     for(int i = 0; i < 3; i++) {
         min_x = std::min(v[i].x(), min_x);
         max_x = std::max(v[i].x(), max_x);
@@ -294,33 +293,35 @@ void rst::rasterizer::rasterize_triangle(const Triangle& t, const std::array<Eig
         max_y = std::max(v[i].y(), max_y);
     }
 
-    // iterate through the pixel
-    for(int y = min_y; y < max_y; y++) {
-        for(int x = min_x; x < max_x; x++) {
+    for (int x = min_x; x <= max_x; x++) {
+        for (int y = min_y; y <= max_y; y++) {
+            if (insideTriangle(x + 0.5, y + 0.5, t.v)) {
+                auto [alpha, beta, gamma] = computeBarycentric2D(x + 0.5, y + 0.5, t.v); // 计算重心坐标
+                float Z = 1.0 / (alpha / v[0].w() + beta / v[1].w() + gamma / v[2].w()); // 计算插值深度
+                float zp = alpha * v[0].z() / v[0].w() + beta * v[1].z() / v[1].w() + gamma * v[2].z() / v[2].w(); // 计算视图空间深度
+                zp *= Z; // 透视校正
 
-            // find if the current pixel is inside the triangle
-            if(insideTriangle(x+0.5, y+0.5, t.v)) {
-                // if so, use the following code to get the interpolated z value.
-                auto[alpha, beta, gamma] = computeBarycentric2D(x+0.5, y+0.5, t.v);
-                float w_reciprocal = 1.0/(alpha / v[0].w() + beta / v[1].w() + gamma / v[2].w());
-                float z_interpolated = alpha * v[0].z() / v[0].w() + beta * v[1].z() / v[1].w() + gamma * v[2].z() / v[2].w();
-                z_interpolated *= w_reciprocal;
+                int cur_index = get_index(x, y);
+                if (zp < depth_buf[cur_index]) {
+                    depth_buf[cur_index] = zp;
+                    
+                    auto interpolated_color = interpolate(alpha, beta, gamma, t.color[0], t.color[1], t.color[2], 1.0f);
+                    auto interpolated_normal = interpolate(alpha, beta, gamma, t.normal[0], t.normal[1], t.normal[2], 1.0f);
+                    auto interpolated_texcoords = interpolate(alpha, beta, gamma, t.tex_coords[0], t.tex_coords[1], t.tex_coords[2], 1.0f);
+                    auto interpolated_shadingcoords = interpolate(alpha, beta, gamma, view_pos[0], view_pos[1], view_pos[2], 1.0f);
 
-                // set the current pixel (use the set_pixel function) 
-                // to the color of the triangle (use getColor function)
-                // if it should be painted.
-                int index = get_index(x, y);
-                if(z_interpolated < depth_buf[index]) {
-                    Eigen::Vector3f p;
-                    p << x, y, z_interpolated;
-                    set_pixel(p, t.color[0]*255);
-                    depth_buf[index] = z_interpolated;
+                    fragment_shader_payload payload(interpolated_color, interpolated_normal.normalized(), interpolated_texcoords, texture ? &*texture : nullptr); // 构造片段着色器负载
+                    payload.view_pos = interpolated_shadingcoords; // 设置视图空间位置
+
+                    auto pixel_color = fragment_shader(payload); // 调用片段着色器获取最终颜色
+
+                    Eigen::Vector2i vertex; // 设置像素位置
+                    vertex << x, y; // 构造二维向量表示像素位置
+                    set_pixel(vertex, pixel_color); // 设置像素颜色
                 }
             }
         }
     }
-
- 
 }
 
 void rst::rasterizer::set_model(const Eigen::Matrix4f& m)
