@@ -163,7 +163,18 @@ Eigen::Vector3f phong_fragment_shader(const fragment_shader_payload& payload)
     {
         // TODO: For each light source in the code, calculate what the *ambient*, *diffuse*, and *specular* 
         // components are. Then, accumulate that result on the *result_color* object.
-        
+        Eigen::Vector3f light_vector = (light.position -point).normalized(); // 光照方向
+        Eigen::Vector3f view_vector = (eye_pos - point).normalized(); // 视线方向
+        Eigen::Vector3f half_vector = (light_vector + view_vector).normalized(); // 半程向量
+        Eigen::Vector3f n_vector = normal.normalized(); // 法线向量
+
+        float r2 = (light.position - point).dot(light.position - point); // 距离的平方
+
+        Eigen::Vector3f la = ka.cwiseProduct(amb_light_intensity); // 环境光照强度
+        Eigen::Vector3f ld = kd.cwiseProduct(light.intensity / r2) * std::max(0.0f, n_vector.dot(light_vector)); // 漫反射光照强度
+        Eigen::Vector3f ls = ks.cwiseProduct(light.intensity / r2) * std::pow(std::max(0.0f, n_vector.dot(half_vector)), p); // 镜面反射光照强度
+
+        result_color += la + ld + ls;
     }
 
     return result_color * 255.f;
