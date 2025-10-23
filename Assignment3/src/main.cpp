@@ -38,11 +38,10 @@ Eigen::Matrix4f get_model_matrix(float angle)
               0, 0, 2.5, 0,
               0, 0, 0, 1;
 
-    // 调整观看模型的角度          
     Eigen::Matrix4f translate;
-    translate << -1, 0, 0, 0,
-            0, -1, 0, 0,
-            0, 0, -1, 0,
+    translate << 1, 0, 0, 0,
+            0, 1, 0, 0,
+            0, 0, 1, 0,
             0, 0, 0, 1;
 
     return translate * rotation * scale;
