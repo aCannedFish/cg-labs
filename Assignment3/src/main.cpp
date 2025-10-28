@@ -54,6 +54,8 @@ Eigen::Matrix4f get_projection_matrix(float eye_fov, float aspect_ratio, float z
     
     Eigen::Matrix4f proj, ortho;
 
+    eye_fov = eye_fov / 180.0f * MY_PI;
+
     proj << zNear, 0, 0, 0,
             0, zNear, 0, 0,
             0, 0, zNear + zFar, -zNear * zFar,
@@ -64,9 +66,9 @@ Eigen::Matrix4f get_projection_matrix(float eye_fov, float aspect_ratio, float z
     w = h * aspect_ratio;
     z = zFar - zNear;
 
-    ortho << 2 / w, 0, 0, 0,
-             0, 2 / h, 0, 0,
-             0, 0, 2 / z, -(zFar+zNear) / 2,
+    ortho << -2 / w, 0, 0, 0,
+             0, -2 / h, 0, 0,
+             0, 0, -2 / z, -(zFar+zNear) / 2,
              0, 0, 0, 1;//正交投影矩阵，因为在观测投影时x0y平面视角默认是中心，所以这里的正交投影就不用平移x和y了
              				
     projection = ortho * proj * projection;
