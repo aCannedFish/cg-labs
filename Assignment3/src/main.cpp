@@ -227,7 +227,47 @@ Eigen::Vector3f displacement_fragment_shader(const fragment_shader_payload& payl
     // Vector ln = (-dU, -dV, 1)
     // Position p = p + kn * n * h(u,v)
     // Normal n = normalize(TBN * ln)
-
+    // 检查纹理是否存在
+    if (!payload.texture) {
+        // 如果没有纹理，直接返回原始法线的颜色
+        Eigen::Vector3f result_color = (normal.normalized() + Eigen::Vector3f(1.0f, 1.0f, 1.0f)) / 2.f;
+        return result_color * 255.f;
+    }
+    
+    Eigen::Vector3f n = normal.normalized();
+    
+    // 计算切线向量，避免除零
+    float denom = sqrt(n.x() * n.x() + n.z() * n.z());
+    if (denom < 1e-6f) {
+        // 如果法线几乎指向 y 轴，使用备用切线
+        denom = 1.0f;
+    }
+    
+    Eigen::Vector3f t = Eigen::Vector3f(
+        n.x() * n.y() / denom,
+        denom,
+        n.z() * n.y() / denom
+    ).normalized();
+    Eigen::Vector3f b = n.cross(t).normalized();
+    Eigen::Matrix3f TBN;
+    TBN.col(0) = t;
+    TBN.col(1) = b;
+    TBN.col(2) = n;
+    
+    // 获取纹理坐标并确保在有效范围内
+    float u = payload.tex_coords.x();
+    float v = payload.tex_coords.y();
+    float w = payload.texture->width;
+    float h = payload.texture->height;
+    
+    // 计算偏移后的坐标，使用 std::min 确保不超出边界
+    float u_plus = std::min(u + 1.0f / w, 1.0f);
+    float v_plus = std::min(v + 1.0f / h, 1.0f);
+    
+    float dU = kh * kn * (payload.texture->getColor(u_plus, v).norm() - payload.texture->getColor(u, v).norm());
+    float dV = kh * kn * (payload.texture->getColor(u, v_plus).norm() - payload.texture->getColor(u, v).norm());
+    Eigen::Vector3f ln = Eigen::Vector3f(-dU, -dV, 1.0f).normalized();
+    normal = (TBN * ln).normalized();
 
     Eigen::Vector3f result_color = {0, 0, 0};
 
@@ -235,7 +275,18 @@ Eigen::Vector3f displacement_fragment_shader(const fragment_shader_payload& payl
     {
         // TODO: For each light source in the code, calculate what the *ambient*, *diffuse*, and *specular* 
         // components are. Then, accumulate that result on the *result_color* object.
+        Eigen::Vector3f light_vector = (light.position -point).normalized(); // 光照方向
+        Eigen::Vector3f view_vector = (eye_pos - point).normalized(); // 视线方向
+        Eigen::Vector3f half_vector = (light_vector + view_vector).normalized(); // 半程向量
+        Eigen::Vector3f n_vector = normal.normalized(); // 法线向量
 
+        float r2 = (light.position - point).dot(light.position - point); // 距离的平方
+
+        Eigen::Vector3f la = ka.cwiseProduct(amb_light_intensity); // 环境光照强度
+        Eigen::Vector3f ld = kd.cwiseProduct(light.intensity / r2) * std::max(0.0f, n_vector.dot(light_vector)); // 漫反射光照强度
+        Eigen::Vector3f ls = ks.cwiseProduct(light.intensity / r2) * std::pow(std::max(0.0f, n_vector.dot(half_vector)), p); // 镜面反射光照强度
+
+        result_color += la + ld + ls;
     }
 
     return result_color * 255.f;
