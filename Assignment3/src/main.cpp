@@ -267,6 +267,7 @@ Eigen::Vector3f displacement_fragment_shader(const fragment_shader_payload& payl
     float dU = kh * kn * (payload.texture->getColor(u_plus, v).norm() - payload.texture->getColor(u, v).norm());
     float dV = kh * kn * (payload.texture->getColor(u, v_plus).norm() - payload.texture->getColor(u, v).norm());
     Eigen::Vector3f ln = Eigen::Vector3f(-dU, -dV, 1.0f).normalized();
+    point += kn * n * payload.texture->getColor(u, v).norm();
     normal = (TBN * ln).normalized();
 
     Eigen::Vector3f result_color = {0, 0, 0};
@@ -275,6 +276,7 @@ Eigen::Vector3f displacement_fragment_shader(const fragment_shader_payload& payl
     {
         // TODO: For each light source in the code, calculate what the *ambient*, *diffuse*, and *specular* 
         // components are. Then, accumulate that result on the *result_color* object.
+        // Copy from phone shader function:
         Eigen::Vector3f light_vector = (light.position -point).normalized(); // 光照方向
         Eigen::Vector3f view_vector = (eye_pos - point).normalized(); // 视线方向
         Eigen::Vector3f half_vector = (light_vector + view_vector).normalized(); // 半程向量
