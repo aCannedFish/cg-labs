@@ -296,24 +296,33 @@ void rst::rasterizer::rasterize_triangle(const Triangle& t, const std::array<Eig
     for (int x = min_x; x <= max_x; x++) {
         for (int y = min_y; y <= max_y; y++) {
             if (insideTriangle(x + 0.5, y + 0.5, t.v)) {
-                auto [alpha, beta, gamma] = computeBarycentric2D(x + 0.5, y + 0.5, t.v); // 计算重心坐标
-                float Z = 1.0 / (alpha / v[0].w() + beta / v[1].w() + gamma / v[2].w()); // 计算插值深度
-                float zp = alpha * v[0].z() / v[0].w() + beta * v[1].z() / v[1].w() + gamma * v[2].z() / v[2].w(); // 计算视图空间深度
-                zp *= Z; // 透视校正
-
+                // 计算重心坐标
+                auto [alpha, beta, gamma] = computeBarycentric2D(x + 0.5, y + 0.5, t.v);
+                // 计算视图空间中的插值深度
+                float Z = 1.0 / (alpha / v[0].w() + beta / v[1].w() + gamma / v[2].w());
+                // 对顶点屏幕深度(v[i].z())和顶点视图深度(v[i].w())的比值进行插值
+                // 原理：z/w的变化是线性的(实际上任意顶点属性A与深度w的比值都是可以线性插值的)，可以使用重心坐标进行插值
+                float zp = alpha * v[0].z() / v[0].w() + beta * v[1].z() / v[1].w() + gamma * v[2].z() / v[2].w();
+                // 利用上一步计算出的z/w插值以及视图空间中的w(此处也就是Z)相乘计算出正确的屏幕空间深度
+                zp *= Z;
+                // 将二维像素坐标转换为一维数组depth_buf和frame_buf的索引(内存分布速度计算效率更高)
                 int cur_index = get_index(x, y);
+                
                 if (zp < depth_buf[cur_index]) {
+                    // 更新深度缓冲值
                     depth_buf[cur_index] = zp;
-                    
+                    // 对像素颜色，法线向量，纹理坐标，着色器空间位置进行重心坐标标准线性插值
+                    // 此处全部对各项属性使用标准线性插值，理论上是不严谨的，但模型和贴图本身精度不高，不需要严格矫正插值
                     auto interpolated_color = interpolate(alpha, beta, gamma, t.color[0], t.color[1], t.color[2], 1.0f);
                     auto interpolated_normal = interpolate(alpha, beta, gamma, t.normal[0], t.normal[1], t.normal[2], 1.0f);
                     auto interpolated_texcoords = interpolate(alpha, beta, gamma, t.tex_coords[0], t.tex_coords[1], t.tex_coords[2], 1.0f);
                     auto interpolated_shadingcoords = interpolate(alpha, beta, gamma, view_pos[0], view_pos[1], view_pos[2], 1.0f);
-
-                    fragment_shader_payload payload(interpolated_color, interpolated_normal.normalized(), interpolated_texcoords, texture ? &*texture : nullptr); // 构造片段着色器负载
-                    payload.view_pos = interpolated_shadingcoords; // 设置视图空间位置
-
-                    auto pixel_color = fragment_shader(payload); // 调用片段着色器获取最终颜色
+                    // 将插值得到的一系列属性打包传递给着色器
+                    fragment_shader_payload payload(interpolated_color, interpolated_normal.normalized(), interpolated_texcoords, texture ? &*texture : nullptr);
+                    // 设置视图空间位置
+                    payload.view_pos = interpolated_shadingcoords;
+                    // 调用片段着色器获取最终颜色
+                    auto pixel_color = fragment_shader(payload);
 
                     Eigen::Vector2i vertex; // 设置像素位置
                     vertex << x, y; // 构造二维向量表示像素位置
