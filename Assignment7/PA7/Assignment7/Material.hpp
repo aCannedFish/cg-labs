@@ -7,7 +7,7 @@
 
 #include "Vector.hpp"
 
-enum MaterialType { DIFFUSE};
+enum MaterialType { DIFFUSE, MICROFACET };
 
 class Material{
 private:
@@ -71,6 +71,39 @@ private:
         // kt = 1 - kr;
     }
 
+    // GGX 法线分布函数：roughness 越小，高光越集中
+    inline float DistributionGGX(const Vector3f &N, const Vector3f &H, float roughness) const
+    {
+        float a = std::max(roughness * roughness, 1e-4f);
+        float a2 = a * a;
+        float NdotH = std::max(0.0f, dotProduct(N, H));
+        float denom = NdotH * NdotH * (a2 - 1.0f) + 1.0f;
+        return a2 / (M_PI * denom * denom);
+    }
+
+    // Schlick-GGX 几何项的单方向形式
+    inline float GeometrySchlickGGX(float NdotV, float roughness) const
+    {
+        float r = roughness + 1.0f;
+        float k = (r * r) / 8.0f;
+        return NdotV / (NdotV * (1.0f - k) + k);
+    }
+
+    // Smith 几何项：同时考虑入射和出射方向的自遮挡
+    inline float GeometrySmith(const Vector3f &N, const Vector3f &wo, const Vector3f &wi, float roughness) const
+    {
+        float NdotO = std::max(0.0f, dotProduct(N, wo));
+        float NdotI = std::max(0.0f, dotProduct(N, wi));
+        return GeometrySchlickGGX(NdotO, roughness) * GeometrySchlickGGX(NdotI, roughness);
+    }
+
+    // Schlick 近似的菲涅尔项，F0 为垂直入射时的反射率
+    inline Vector3f FresnelSchlick(float cosTheta, const Vector3f &F0) const
+    {
+        float f = std::pow(1.0f - cosTheta, 5.0f);
+        return F0 + (Vector3f(1.0f) - F0) * f;
+    }
+
     Vector3f toWorld(const Vector3f &a, const Vector3f &N){
         Vector3f B, C;
         if (std::fabs(N.x) > std::fabs(N.y)){
@@ -92,6 +125,7 @@ public:
     float ior;
     Vector3f Kd, Ks;
     float specularExponent;
+    float roughness;
     //Texture tex;
 
     inline Material(MaterialType t=DIFFUSE, Vector3f e=Vector3f(0,0,0));
@@ -114,6 +148,7 @@ Material::Material(MaterialType t, Vector3f e){
     m_type = t;
     //m_color = c;
     m_emission = e;
+    roughness = 0.2f;
 }
 
 MaterialType Material::getType(){return m_type;}
@@ -142,6 +177,28 @@ Vector3f Material::sample(const Vector3f &wi, const Vector3f &N){
             
             break;
         }
+        case MICROFACET:
+        {
+            // 按 GGX 分布采样半程向量，再关于半程向量反射入射方向
+            float a = std::max(roughness * roughness, 1e-4f);
+            float a2 = a * a;
+            for (int attempt = 0; attempt < 8; ++attempt)
+            {
+                float x_1 = get_random_float(), x_2 = get_random_float();
+                float phi = 2.0f * M_PI * x_1;
+                float cosTheta = std::sqrt((1.0f - x_2) / (1.0f + (a2 - 1.0f) * x_2));
+                float sinTheta = std::sqrt(std::max(0.0f, 1.0f - cosTheta * cosTheta));
+                Vector3f localH(sinTheta * std::cos(phi), sinTheta * std::sin(phi), cosTheta);
+                Vector3f H = normalize(toWorld(localH, N));
+                Vector3f out = normalize(2.0f * dotProduct(wi, H) * H - wi);
+                // 采样结果落到表面以下时重新采样
+                if (dotProduct(out, N) > 0.0f)
+                {
+                    return out;
+                }
+            }
+            return N;
+        }
     }
 }
 
@@ -155,6 +212,19 @@ float Material::pdf(const Vector3f &wi, const Vector3f &wo, const Vector3f &N){
             else
                 return 0.0f;
             break;
+        }
+        case MICROFACET:
+        {
+            // GGX 采样半程向量的概率密度，转换到出射方向
+            Vector3f H = normalize(wi + wo);
+            float NdotH = std::max(0.0f, dotProduct(N, H));
+            float OdotH = std::max(0.0f, dotProduct(wo, H));
+            if (OdotH < EPSILON)
+            {
+                return 0.0f;
+            }
+            float D = DistributionGGX(N, H, roughness);
+            return D * NdotH / (4.0f * OdotH);
         }
     }
 }
@@ -172,6 +242,30 @@ Vector3f Material::eval(const Vector3f &wi, const Vector3f &wo, const Vector3f &
             else
                 return Vector3f(0.0f);
             break;
+        }
+        case MICROFACET:
+        {
+            // Cook-Torrance BRDF：D * G * F / (4 * (N·wo) * (N·wi))
+            float NdotO = dotProduct(N, wo);
+            float NdotI = dotProduct(N, wi);
+            if (NdotO <= 0.0f || NdotI <= 0.0f)
+            {
+                return Vector3f(0.0f);
+            }
+
+            Vector3f H = normalize(wi + wo);
+            float OdotH = std::max(0.0f, dotProduct(wo, H));
+
+            float D = DistributionGGX(N, H, roughness);
+            float G = GeometrySmith(N, wo, wi, roughness);
+            Vector3f F = FresnelSchlick(OdotH, Ks);
+
+            float denom = 4.0f * NdotO * NdotI;
+            if (denom < EPSILON)
+            {
+                return Vector3f(0.0f);
+            }
+            return F * (D * G / denom);
         }
     }
 }

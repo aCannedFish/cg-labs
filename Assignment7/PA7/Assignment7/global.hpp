@@ -30,9 +30,9 @@ inline  bool solveQuadratic(const float &a, const float &b, const float &c, floa
 
 inline float get_random_float()
 {
-    std::random_device dev;
-    std::mt19937 rng(dev());
-    std::uniform_real_distribution<float> dist(0.f, 1.f); // distribution in range [1, 6]
+    // 每个线程持有自己的随机数生成器，避免多线程采样时竞争同一状态
+    thread_local std::mt19937 rng(std::random_device{}());
+    thread_local std::uniform_real_distribution<float> dist(0.f, 1.f);
 
     return dist(rng);
 }
