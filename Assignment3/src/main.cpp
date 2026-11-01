@@ -1,4 +1,5 @@
 #include <iostream>
+#include <string>
 #include <opencv2/opencv.hpp>
 
 #include "global.hpp"
@@ -107,7 +108,7 @@ Eigen::Vector3f texture_fragment_shader(const fragment_shader_payload& payload)
     if (payload.texture)
     {
         // TODO: Get the texture value at the texture coordinates of the current fragment
-        return_color = payload.texture->getColor(payload.tex_coords.x(), payload.tex_coords.y());
+        return_color = sampleTexture(payload.texture, payload.tex_coords.x(), payload.tex_coords.y());
     }
     Eigen::Vector3f texture_color;
     texture_color << return_color.x(), return_color.y(), return_color.z();
@@ -269,10 +270,10 @@ Eigen::Vector3f displacement_fragment_shader(const fragment_shader_payload& payl
     float u_plus = std::min(u + 1.0f / w, 1.0f);
     float v_plus = std::min(v + 1.0f / h, 1.0f);
     
-    float dU = kh * kn * (payload.texture->getColor(u_plus, v).norm() - payload.texture->getColor(u, v).norm());
-    float dV = kh * kn * (payload.texture->getColor(u, v_plus).norm() - payload.texture->getColor(u, v).norm());
+    float dU = kh * kn * (sampleTexture(payload.texture, u_plus, v).norm() - sampleTexture(payload.texture, u, v).norm());
+    float dV = kh * kn * (sampleTexture(payload.texture, u, v_plus).norm() - sampleTexture(payload.texture, u, v).norm());
     Eigen::Vector3f ln = Eigen::Vector3f(-dU, -dV, 1.0f).normalized();
-    point += kn * n * payload.texture->getColor(u, v).norm();
+    point += kn * n * sampleTexture(payload.texture, u, v).norm();
     normal = (TBN * ln).normalized();
 
     Eigen::Vector3f result_color = {0, 0, 0};
@@ -370,8 +371,8 @@ Eigen::Vector3f bump_fragment_shader(const fragment_shader_payload& payload)
     float u_plus = std::min(u + 1.0f / w, 1.0f);
     float v_plus = std::min(v + 1.0f / h, 1.0f);
     
-    float dU = kh * kn * (payload.texture->getColor(u_plus, v).norm() - payload.texture->getColor(u, v).norm());
-    float dV = kh * kn * (payload.texture->getColor(u, v_plus).norm() - payload.texture->getColor(u, v).norm());
+    float dU = kh * kn * (sampleTexture(payload.texture, u_plus, v).norm() - sampleTexture(payload.texture, u, v).norm());
+    float dV = kh * kn * (sampleTexture(payload.texture, u, v_plus).norm() - sampleTexture(payload.texture, u, v).norm());
     Eigen::Vector3f ln = Eigen::Vector3f(-dU, -dV, 1.0f).normalized();
     normal = (TBN * ln).normalized();
 
@@ -384,6 +385,15 @@ Eigen::Vector3f bump_fragment_shader(const fragment_shader_payload& payload)
 
 int main(int argc, const char** argv)
 {
+    // --nearest 关闭双线性纹理插值，用于和双线性结果对比
+    for (int i = 1; i < argc; ++i)
+    {
+        if (std::string(argv[i]) == "--nearest")
+        {
+            g_useBilinearTexture = false;
+        }
+    }
+
     std::vector<Triangle*> TriangleList;
 
     float angle = 140.0;
@@ -422,29 +432,29 @@ int main(int argc, const char** argv)
         command_line = true;
         filename = std::string(argv[1]);
 
-        if (argc == 3 && std::string(argv[2]) == "texture")
+        if (argc >= 3 && std::string(argv[2]) == "texture")
         {
             std::cout << "Rasterizing using the texture shader\n";
             active_shader = texture_fragment_shader;
             texture_path = "spot_texture.png";
             r.set_texture(Texture(obj_path + texture_path));
         }
-        else if (argc == 3 && std::string(argv[2]) == "normal")
+        else if (argc >= 3 && std::string(argv[2]) == "normal")
         {
             std::cout << "Rasterizing using the normal shader\n";
             active_shader = normal_fragment_shader;
         }
-        else if (argc == 3 && std::string(argv[2]) == "phong")
+        else if (argc >= 3 && std::string(argv[2]) == "phong")
         {
             std::cout << "Rasterizing using the phong shader\n";
             active_shader = phong_fragment_shader;
         }
-        else if (argc == 3 && std::string(argv[2]) == "bump")
+        else if (argc >= 3 && std::string(argv[2]) == "bump")
         {
             std::cout << "Rasterizing using the bump shader\n";
             active_shader = bump_fragment_shader;
         }
-        else if (argc == 3 && std::string(argv[2]) == "displacement")
+        else if (argc >= 3 && std::string(argv[2]) == "displacement")
         {
             std::cout << "Rasterizing using the bump shader\n";
             active_shader = displacement_fragment_shader;

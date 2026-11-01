@@ -24,9 +24,18 @@ public:
 
     int width, height;
 
+    // 最近邻采样：直接取纹理坐标对应的纹素
     Eigen::Vector3f getColor(float u, float v)
     {
-        // 双线性插值：先把纹理坐标映射到纹素坐标，再对相邻四个纹素按距离加权
+        auto u_img = u * width;
+        auto v_img = (1 - v) * height;
+        auto color = image_data.at<cv::Vec3b>(v_img, u_img);
+        return Eigen::Vector3f(color[0], color[1], color[2]);
+    }
+
+    // 双线性插值：把纹理坐标映射到纹素坐标，再对相邻四个纹素按距离加权
+    Eigen::Vector3f getColorBilinear(float u, float v)
+    {
         u = std::clamp(u, 0.0f, 1.0f);
         v = std::clamp(v, 0.0f, 1.0f);
 
@@ -54,6 +63,18 @@ public:
         Eigen::Vector3f bottom = c01 * (1.0f - fx) + c11 * fx;
         return top * (1.0f - fy) + bottom * fy;
     }
-
 };
+
+// 默认使用双线性插值；运行时加 --nearest 可以切回最近邻采样做对比
+inline bool g_useBilinearTexture = true;
+
+inline Eigen::Vector3f sampleTexture(Texture *texture, float u, float v)
+{
+    if (g_useBilinearTexture)
+    {
+        return texture->getColorBilinear(u, v);
+    }
+    return texture->getColor(u, v);
+}
+
 #endif //RASTERIZER_TEXTURE_H
