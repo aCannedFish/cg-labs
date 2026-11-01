@@ -40,7 +40,7 @@ auto to_vec4(const Eigen::Vector3f& v3, float w = 1.0f)
 }
 
 
-static bool insideTriangle(int x, int y, const Vector3f* _v)
+static bool insideTriangle(float x, float y, const Vector3f* _v)
 {   
     // TODO : Implement this function to check if the point (x, y) is inside the triangle represented by _v[0], _v[1], _v[2]
     // Suppose _v[0] is point A, _v[1] is point B, _v[2] is point C
@@ -49,7 +49,7 @@ static bool insideTriangle(int x, int y, const Vector3f* _v)
 
     for(int i = 0; i < 3; i++) {
         // the current point
-        Eigen::Vector3f p0(static_cast<float>(x), static_cast<float>(y), 0.0f);
+        Eigen::Vector3f p0(x, y, 0.0f);
         // the 1st vertex
         Eigen::Vector3f p1 = _v[i];
         // the 2nd vertex
@@ -134,41 +134,74 @@ void rst::rasterizer::draw(pos_buf_id pos_buffer, ind_buf_id ind_buffer, col_buf
 void rst::rasterizer::rasterize_triangle(const Triangle& t) {
     auto v = t.toVector4();
 
-    float min_x = width;
-    float max_x = 0;
-    float min_y = height;
-    float max_y = 0;
+    // 2x2 超采样：每个像素在四个象限的中心各取一个样本
+    static const float sample_offsets[4][2] = {
+        {0.25f, 0.25f}, {0.75f, 0.25f}, {0.25f, 0.75f}, {0.75f, 0.75f}
+    };
+
+    float min_x_f = width;
+    float max_x_f = 0;
+    float min_y_f = height;
+    float max_y_f = 0;
 
     // find out the bounding box of current triangle
     for(int i = 0; i < 3; i++) {
-        min_x = std::min(v[i].x(), min_x);
-        max_x = std::max(v[i].x(), max_x);
-        min_y = std::min(v[i].y(), min_y);
-        max_y = std::max(v[i].y(), max_y);
+        min_x_f = std::min(v[i].x(), min_x_f);
+        max_x_f = std::max(v[i].x(), max_x_f);
+        min_y_f = std::min(v[i].y(), min_y_f);
+        max_y_f = std::max(v[i].y(), max_y_f);
     }
 
-    // iterate through the pixel
-    for(int y = min_y; y < max_y; y++) {
-        for(int x = min_x; x < max_x; x++) {
+    int min_x = std::max(0, static_cast<int>(std::floor(min_x_f)));
+    int max_x = std::min(width - 1, static_cast<int>(std::ceil(max_x_f)));
+    int min_y = std::max(0, static_cast<int>(std::floor(min_y_f)));
+    int max_y = std::min(height - 1, static_cast<int>(std::ceil(max_y_f)));
 
-            // find if the current pixel is inside the triangle
-            if(insideTriangle(x+0.5, y+0.5, t.v)) {
-                // if so, use the following code to get the interpolated z value.
-                auto[alpha, beta, gamma] = computeBarycentric2D(x+0.5, y+0.5, t.v);
+    // iterate through the pixel
+    for(int y = min_y; y <= max_y; y++) {
+        for(int x = min_x; x <= max_x; x++) {
+
+            int base_index = ((height - 1 - y) * width + x) * 4;
+            bool touched = false;
+
+            // 对每个样本分别做覆盖测试和深度测试
+            for(int s = 0; s < 4; s++) {
+                float sample_x = x + sample_offsets[s][0];
+                float sample_y = y + sample_offsets[s][1];
+
+                if(!insideTriangle(sample_x, sample_y, t.v)) {
+                    continue;
+                }
+
+                // 用样本位置的屏幕坐标插值出该样本的深度
+                auto[alpha, beta, gamma] = computeBarycentric2D(sample_x, sample_y, t.v);
                 float w_reciprocal = 1.0/(alpha / v[0].w() + beta / v[1].w() + gamma / v[2].w());
                 float z_interpolated = alpha * v[0].z() / v[0].w() + beta * v[1].z() / v[1].w() + gamma * v[2].z() / v[2].w();
                 z_interpolated *= w_reciprocal;
 
-                // set the current pixel (use the set_pixel function) 
-                // to the color of the triangle (use getColor function)
-                // if it should be painted.
-                int index = get_index(x, y);
-                if(z_interpolated < depth_buf[index]) {
-                    Eigen::Vector3f p;
-                    p << x, y, z_interpolated;
-                    set_pixel(p, t.getColor());
-                    depth_buf[index] = z_interpolated;
+                if(z_interpolated < sample_depth_buf[base_index + s]) {
+                    sample_depth_buf[base_index + s] = z_interpolated;
+                    sample_color_buf[base_index + s] = t.getColor();
+                    touched = true;
                 }
+            }
+
+            if(touched) {
+                // 解析：四个样本的颜色取平均，得到该像素最终的颜色
+                Eigen::Vector3f color(0.0f, 0.0f, 0.0f);
+                float min_depth = std::numeric_limits<float>::infinity();
+                for(int s = 0; s < 4; s++) {
+                    color += sample_color_buf[base_index + s];
+                    min_depth = std::min(min_depth, sample_depth_buf[base_index + s]);
+                }
+                color /= 4.0f;
+
+                int pixel_index = (height - 1 - y) * width + x;
+                depth_buf[pixel_index] = min_depth;
+
+                Eigen::Vector3f p;
+                p << x, y, min_depth;
+                set_pixel(p, color);
             }
         }
     }
@@ -203,10 +236,12 @@ void rst::rasterizer::clear(rst::Buffers buff)
     if ((buff & rst::Buffers::Color) == rst::Buffers::Color)
     {
         std::fill(frame_buf.begin(), frame_buf.end(), Eigen::Vector3f{0, 0, 0});
+        std::fill(sample_color_buf.begin(), sample_color_buf.end(), Eigen::Vector3f{0, 0, 0});
     }
     if ((buff & rst::Buffers::Depth) == rst::Buffers::Depth)
     {
         std::fill(depth_buf.begin(), depth_buf.end(), std::numeric_limits<float>::infinity());
+        std::fill(sample_depth_buf.begin(), sample_depth_buf.end(), std::numeric_limits<float>::infinity());
     }
 }
 
@@ -214,6 +249,10 @@ rst::rasterizer::rasterizer(int w, int h) : width(w), height(h)
 {
     frame_buf.resize(w * h);
     depth_buf.resize(w * h);
+
+    // 每个像素维护四个样本的颜色与深度
+    sample_color_buf.resize(w * h * 4, Eigen::Vector3f{0, 0, 0});
+    sample_depth_buf.resize(w * h * 4, std::numeric_limits<float>::infinity());
 }
 
 int rst::rasterizer::get_index(int x, int y)
