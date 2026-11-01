@@ -233,8 +233,17 @@ inline Intersection Triangle::getIntersection(Ray ray)
 
     // TODO find ray triangle intersection
 
+    // 交点必须位于射线正方向上
+    if (t_tmp < 0)
+        return inter;
 
-
+    // 记录交点信息，供上层着色使用
+    inter.happened = true;
+    inter.coords = ray(t_tmp);
+    inter.normal = normal;
+    inter.distance = t_tmp;
+    inter.obj = this;
+    inter.m = m;
 
     return inter;
 }

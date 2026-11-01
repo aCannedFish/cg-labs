@@ -96,7 +96,28 @@ inline bool Bounds3::IntersectP(const Ray& ray, const Vector3f& invDir,
     // invDir: ray direction(x,y,z), invDir=(1.0/x,1.0/y,1.0/z), use this because Multiply is faster that Division
     // dirIsNeg: ray direction(x,y,z), dirIsNeg=[int(x>0),int(y>0),int(z>0)], use this to simplify your logic
     // TODO test if ray bound intersects
-    
+
+    // 在三个轴向上分别求出射线进入和离开包围盒的 t 值，
+    // 取所有交区间的交集，非空则说明射线与包围盒相交。
+    float tEnter = static_cast<float>(ray.t_min);
+    float tExit = static_cast<float>(ray.t_max);
+    for (int i = 0; i < 3; ++i)
+    {
+        float tMin = (pMin[i] - ray.origin[i]) * invDir[i];
+        float tMax = (pMax[i] - ray.origin[i]) * invDir[i];
+        // 方向为负时 tMin 和 tMax 对应的大小关系会反过来
+        if (!dirIsNeg[i])
+        {
+            std::swap(tMin, tMax);
+        }
+        tEnter = std::max(tEnter, tMin);
+        tExit = std::min(tExit, tMax);
+        if (tEnter > tExit)
+        {
+            return false;
+        }
+    }
+    return tEnter <= tExit;
 }
 
 inline Bounds3 Union(const Bounds3& b1, const Bounds3& b2)

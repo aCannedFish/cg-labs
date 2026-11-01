@@ -106,4 +106,29 @@ Intersection BVHAccel::getIntersection(BVHBuildNode* node, const Ray& ray) const
 {
     // TODO Traverse the BVH to find intersection
 
+    Intersection inter;
+
+    // 先做包围盒求交测试，不相交的子树直接剪枝
+    // dirIsNeg 的约定是 int(x > 0)，即方向分量为正时为 1
+    std::array<int, 3> dirIsNeg = {ray.direction.x > 0, ray.direction.y > 0,
+                                   ray.direction.z > 0};
+    if (!node->bounds.IntersectP(ray, ray.direction_inv, dirIsNeg))
+    {
+        return inter;
+    }
+
+    // 叶子节点：与其中唯一的物体求交
+    if (node->left == nullptr && node->right == nullptr)
+    {
+        if (node->object != nullptr)
+        {
+            inter = node->object->getIntersection(ray);
+        }
+        return inter;
+    }
+
+    // 内部节点：递归查询两个子树，取距离最近的交点
+    Intersection leftInter = getIntersection(node->left, ray);
+    Intersection rightInter = getIntersection(node->right, ray);
+    return leftInter.distance < rightInter.distance ? leftInter : rightInter;
 }
