@@ -230,7 +230,12 @@ void Renderer::Render(const Scene& scene)
             // Also, don't forget to multiply both of them with the variable *scale*, and
             // x (horizontal) variable with the *imageAspectRatio*            
 
-            Vector3f dir = Vector3f(x, y, -1); // Don't forget to normalize this direction!
+            // 像素中心 (i + 0.5, j + 0.5) 先映射到 [-1, 1] 的归一化设备坐标，
+            // 再乘上视锥半角的正切和宽高比，得到近平面上的位置
+            x = (2 * (i + 0.5) / (float)scene.width - 1) * imageAspectRatio * scale;
+            y = (1 - 2 * (j + 0.5) / (float)scene.height) * scale;
+
+            Vector3f dir = normalize(Vector3f(x, y, -1)); // Don't forget to normalize this direction!
             framebuffer[m++] = castRay(eye_pos, dir, scene, 0);
         }
         UpdateProgress(j / (float)scene.height);

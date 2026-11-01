@@ -11,7 +11,22 @@ bool rayTriangleIntersect(const Vector3f& v0, const Vector3f& v1, const Vector3f
     // that's specified bt v0, v1 and v2 intersects with the ray (whose
     // origin is *orig* and direction is *dir*)
     // Also don't forget to update tnear, u and v.
-    return false;
+
+    // Möller-Trumbore 算法：把射线方程与三角形所在平面联立，
+    // 用重心坐标 u、v 判断交点是否落在三角形内部。
+    Vector3f e1 = v1 - v0;
+    Vector3f e2 = v2 - v0;
+    Vector3f s = orig - v0;
+    Vector3f s1 = crossProduct(dir, e2);
+    Vector3f s2 = crossProduct(s, e1);
+
+    float coefficient = 1.0f / dotProduct(s1, e1);
+    tnear = dotProduct(s2, e2) * coefficient;
+    u = dotProduct(s1, s) * coefficient;
+    v = dotProduct(s2, dir) * coefficient;
+
+    // 交点必须在射线正方向上，且重心坐标非负、u + v 不超过 1
+    return tnear > 0.0f && u >= 0.0f && v >= 0.0f && (u + v) <= 1.0f;
 }
 
 class MeshTriangle : public Object
