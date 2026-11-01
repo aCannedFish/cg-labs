@@ -1,6 +1,17 @@
 #include <algorithm>
 #include <cassert>
+#include <limits>
 #include "BVH.hpp"
+
+// 取包围盒中心在指定轴上的分量（非 const 的 operator[] 只有声明，不能用）
+static double centroidAxis(const Vector3f& centroid, int axis)
+{
+    if (axis == 0)
+        return centroid.x;
+    if (axis == 1)
+        return centroid.y;
+    return centroid.z;
+}
 
 BVHAccel::BVHAccel(std::vector<Object*> p, int maxPrimsInNode,
                    SplitMethod splitMethod)
@@ -47,6 +58,65 @@ BVHBuildNode* BVHAccel::recursiveBuild(std::vector<Object*> objects)
 
         node->bounds = Union(node->left->bounds, node->right->bounds);
         return node;
+    }
+    else if (splitMethod == SplitMethod::SAH) {
+        // SAH：在三个轴向上分别尝试所有划分位置，
+        // 用左右子树包围盒面积乘以其中图元数量估计遍历开销，取开销最小的划分。
+        const int n = static_cast<int>(objects.size());
+        int bestAxis = 0;
+        int bestSplit = n / 2;
+        double bestCost = std::numeric_limits<double>::infinity();
+
+        for (int axis = 0; axis < 3; ++axis) {
+            std::sort(objects.begin(), objects.end(), [axis](Object* a, Object* b) {
+                return centroidAxis(a->getBounds().Centroid(), axis) <
+                       centroidAxis(b->getBounds().Centroid(), axis);
+            });
+
+            // 前缀包围盒，leftBounds[i] 覆盖前 i+1 个图元
+            std::vector<Bounds3> leftBounds(n);
+            Bounds3 running;
+            for (int i = 0; i < n; ++i) {
+                running = Union(running, objects[i]->getBounds());
+                leftBounds[i] = running;
+            }
+
+            // 后缀包围盒，rightBounds[i] 覆盖从 i 到末尾的图元
+            std::vector<Bounds3> rightBounds(n);
+            running = Bounds3();
+            for (int i = n - 1; i >= 0; --i) {
+                running = Union(running, objects[i]->getBounds());
+                rightBounds[i] = running;
+            }
+
+            for (int split = 1; split < n; ++split) {
+                double cost = leftBounds[split - 1].SurfaceArea() * split +
+                              rightBounds[split].SurfaceArea() * (n - split);
+                if (cost < bestCost) {
+                    bestCost = cost;
+                    bestAxis = axis;
+                    bestSplit = split;
+                }
+            }
+        }
+
+        // 按取得最小开销的轴重新排序，再在 bestSplit 处切分
+        std::sort(objects.begin(), objects.end(), [bestAxis](Object* a, Object* b) {
+            return centroidAxis(a->getBounds().Centroid(), bestAxis) <
+                   centroidAxis(b->getBounds().Centroid(), bestAxis);
+        });
+
+        auto beginning = objects.begin();
+        auto middling = objects.begin() + bestSplit;
+        auto ending = objects.end();
+
+        auto leftshapes = std::vector<Object*>(beginning, middling);
+        auto rightshapes = std::vector<Object*>(middling, ending);
+
+        node->left = recursiveBuild(leftshapes);
+        node->right = recursiveBuild(rightshapes);
+
+        node->bounds = Union(node->left->bounds, node->right->bounds);
     }
     else {
         Bounds3 centroidBounds;
