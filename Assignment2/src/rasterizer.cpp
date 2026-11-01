@@ -49,7 +49,7 @@ static bool insideTriangle(int x, int y, const Vector3f* _v)
 
     for(int i = 0; i < 3; i++) {
         // the current point
-        Eigen::Vector3f p0 = {x, y, 0};
+        Eigen::Vector3f p0(static_cast<float>(x), static_cast<float>(y), 0.0f);
         // the 1st vertex
         Eigen::Vector3f p1 = _v[i];
         // the 2nd vertex
