@@ -38,6 +38,34 @@ Eigen::Matrix4f get_model_matrix(float rotation_angle)
     return model;
 }
 
+// 绕任意过原点的单位轴旋转 angle 度（Rodrigues 旋转公式）
+Eigen::Matrix4f get_rotation(Eigen::Vector3f axis, float angle)
+{
+    Eigen::Matrix4f rotation = Eigen::Matrix4f::Identity();
+
+    // 轴向量的长度需要为 1，长度过小时无法确定旋转轴，直接返回单位矩阵
+    if (axis.norm() < 1e-8)
+    {
+        return rotation;
+    }
+    axis.normalize();
+
+    double rad = angle / 180.0 * MY_PI;
+    double c = cos(rad);
+    double s = sin(rad);
+    double t = 1.0 - c;
+    double x = axis.x();
+    double y = axis.y();
+    double z = axis.z();
+
+    rotation << t * x * x + c,     t * x * y - s * z, t * x * z + s * y, 0,
+                t * x * y + s * z, t * y * y + c,     t * y * z - s * x, 0,
+                t * x * z - s * y, t * y * z + s * x, t * z * z + c,     0,
+                0,                 0,                 0,                 1;
+
+    return rotation;
+}
+
 Eigen::Matrix4f get_projection_matrix(float eye_fov, float aspect_ratio,
                                       float zNear, float zFar)
 {
